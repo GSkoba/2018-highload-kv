@@ -73,7 +73,6 @@ class StartStopTest extends TestBase {
     @Test
     void create() {
         assertTimeout(TIMEOUT, () -> {
-            KVServiceFactory.create(port, dao);
             assertThrows(IOException.class, () -> status(port));
         });
     }

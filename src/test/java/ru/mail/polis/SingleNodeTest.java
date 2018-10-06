@@ -65,6 +65,11 @@ class SingleNodeTest extends TestBase {
         return "http://localhost:" + port + "/v0/entity?id=" + id;
     }
 
+    @NotNull
+    private String absentParameterUrl() {
+        return "http://localhost:" + port + "/v0/entity";
+    }
+
     private HttpResponse get(@NotNull final String key) throws IOException {
         return Request.Get(url(key)).execute().returnResponse();
     }
@@ -86,6 +91,14 @@ class SingleNodeTest extends TestBase {
             assertEquals(400, delete("").getStatusLine().getStatusCode());
             assertEquals(400, upsert("", new byte[]{0}).getStatusLine().getStatusCode());
         });
+    }
+
+    @Test
+    public void absentParameterRequest() throws Exception{
+        assertTimeout(TIMEOUT, () -> assertEquals(
+                400,
+                Request.Get(absentParameterUrl()).execute().returnResponse()
+                        .getStatusLine().getStatusCode()));
     }
 
     @Test
