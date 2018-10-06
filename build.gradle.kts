@@ -17,6 +17,11 @@ dependencies {
     // JUnit Jupiter test framework
     testCompile("org.junit.jupiter:junit-jupiter-api:5.3.1")
 
+    // one-nio
+    compile("ru.odnoklassniki:one-nio:1.0.2")
+
+    //DB
+    compile("org.mapdb:mapdb:3.0.5")
 
     // HTTP client for unit tests
     testCompile("org.apache.httpcomponents:fluent-hc:4.5.3")
