@@ -31,10 +31,6 @@ public class Value implements Serializable {
         return state;
     }
 
-    public void setState(State state) {
-        this.state = state;
-    }
-
     public byte[] getData() {
         return data;
     }
@@ -45,10 +41,6 @@ public class Value implements Serializable {
 
     public long getTimestamp() {
         return timestamp;
-    }
-
-    public void setTimestamp(long timestamp) {
-        this.timestamp = timestamp;
     }
 
     @Override
