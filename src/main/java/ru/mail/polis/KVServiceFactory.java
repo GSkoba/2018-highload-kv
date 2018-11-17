@@ -20,6 +20,7 @@ import one.nio.http.HttpServerConfig;
 import one.nio.server.AcceptorConfig;
 import org.jetbrains.annotations.NotNull;
 import ru.mail.polis.gskoba.PersistentKVService;
+
 import java.io.IOException;
 import java.util.Set;
 
@@ -60,6 +61,6 @@ final class KVServiceFactory {
         AcceptorConfig acceptorConfig = new AcceptorConfig();
         acceptorConfig.port = port;
         config.acceptors = new AcceptorConfig[]{acceptorConfig};
-        return new PersistentKVService(config,dao,topology);
+        return new PersistentKVService(config, dao, topology);
     }
 }

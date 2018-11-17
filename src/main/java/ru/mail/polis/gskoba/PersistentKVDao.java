@@ -12,18 +12,19 @@ import java.io.IOException;
 import java.util.NoSuchElementException;
 
 public class PersistentKVDao implements KVDao {
-
-
     private final DB db;
     private final File data;
     private final HTreeMap<byte[], byte[]> storage;
 
     public PersistentKVDao(File directory) {
-        this.data = new File(directory,"db");
+        this.data = new File(directory, "db");
         this.db = DBMaker.fileDB(data).fileChannelEnable()
                 .fileMmapPreclearDisable().fileMmapEnable()
                 .fileMmapEnableIfSupported().make();
-        this.storage = db.hashMap(data.getName()).keySerializer(Serializer.BYTE_ARRAY).valueSerializer(Serializer.BYTE_ARRAY).createOrOpen();
+        this.storage = db.hashMap(data.getName())
+                .keySerializer(Serializer.BYTE_ARRAY)
+                .valueSerializer(Serializer.BYTE_ARRAY)
+                .createOrOpen();
     }
 
     @NotNull
@@ -34,19 +35,18 @@ public class PersistentKVDao implements KVDao {
         return out;
     }
 
-
     @Override
     public void upsert(@NotNull byte[] key, @NotNull byte[] value) throws IOException {
-        this.storage.put(key,value);
+        this.storage.put(key, value);
     }
 
     @Override
-    public void remove(@NotNull byte[] key) throws IOException{
+    public void remove(@NotNull byte[] key) throws IOException {
         this.storage.remove(key);
     }
 
     @Override
-    public void close() throws IOException{
+    public void close() throws IOException {
         db.close();
     }
 }

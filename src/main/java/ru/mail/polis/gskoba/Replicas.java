@@ -3,8 +3,9 @@ package ru.mail.polis.gskoba;
 public class Replicas {
     private int ack, from;
 
-    public Replicas(String replicasIn, int nodesAmount){
+    public Replicas(String replicasIn, int nodesAmount) {
         String[] replicas = replicasIn.split("/");
+        if (replicas.length != 2) throw new IllegalArgumentException();
         ack = Integer.parseInt(replicas[0]);
         from = Integer.parseInt(replicas[1]);
         if (ack < 1 || ack > from || from > nodesAmount) throw new IllegalArgumentException();

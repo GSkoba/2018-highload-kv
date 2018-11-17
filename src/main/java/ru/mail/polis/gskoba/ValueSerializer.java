@@ -1,12 +1,14 @@
 package ru.mail.polis.gskoba;
 
 import org.jetbrains.annotations.NotNull;
+
 import java.nio.ByteBuffer;
 
 public class ValueSerializer {
+    public static final ValueSerializer INSTANCE = new ValueSerializer();
 
     public byte[] serialize(@NotNull Value value) {
-        int length = 12 + value.getData().length;
+        int length = 12 + value.getData().length; //12 = long size + int size
         ByteBuffer buffer = ByteBuffer.allocate(length);
         buffer.putLong(value.getTimestamp());
         buffer.putInt(value.getState().ordinal());
