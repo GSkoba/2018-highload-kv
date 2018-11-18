@@ -11,6 +11,8 @@ import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static java.lang.Math.abs;
+
 public class PersistentKVService extends HttpServer implements KVService {
     @NotNull
     private final KVDao kvDao;
@@ -46,7 +48,6 @@ public class PersistentKVService extends HttpServer implements KVService {
             session.sendError(Response.BAD_REQUEST, null);
         }
     }
-
 
     @Path("/v0/entity")
     public void entity(Request request, HttpSession session,
@@ -159,15 +160,14 @@ public class PersistentKVService extends HttpServer implements KVService {
     private List<String> getNodes(String key, int length) {
         List<String> clients = new ArrayList<>();
         int firstNodeId = (key.hashCode() & Integer.MAX_VALUE) % topology.length;
-        clients.add(topology[firstNodeId]);
-        for (int i = 1; i < length; i++) {
+        for (int i = 0; i < length; i++) {
             clients.add(topology[(firstNodeId + i) % topology.length]);
         }
         return clients;
     }
 
     private Response proxiedGET(String id, int ack, List<String> from) {
-        List<Value> values = new ArrayList<>();
+        final List<Value> values = new ArrayList<>();
         for (String node : from) {
             if (node.equals(me)) {
                 try {
@@ -181,7 +181,17 @@ public class PersistentKVService extends HttpServer implements KVService {
             } else {
                 try {
                     final Response response = nodes.get(node).get("/v0/entity?id=" + id, "proxied: true");
-                    values.add(proxGetNewValue(response));
+                    switch (response.getStatus()){
+                        case 200:
+                            values.add(proxGetNewValue(response));
+                            logger.info("proxiedGET ok" + ":" + response.getStatus());
+                            break;
+                        case 500:
+                            logger.info("proxiedGET bad answer" + ":" + response.getStatus());
+                            break;
+                        default:
+                            logger.info("proxiedGET def" + ":" + response.getStatus());
+                    }
                 } catch (Exception ex) {
                     logger.info(ex);
                 }
