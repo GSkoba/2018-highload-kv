@@ -6,6 +6,7 @@ import org.jetbrains.annotations.NotNull;
 import ru.mail.polis.KVDao;
 import ru.mail.polis.KVService;
 import org.apache.log4j.Logger;
+
 import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -178,7 +179,7 @@ public class PersistentKVService extends HttpServer implements KVService {
             } else {
                 try {
                     final Response response = nodes.get(node).get("/v0/entity?id=" + id, "proxied: true");
-                    switch (response.getStatus()){
+                    switch (response.getStatus()) {
                         case 200:
                             values.add(proxGetNewValue(response));
                             logger.info("proxiedGET ok" + ":" + response.getStatus());
