@@ -6,12 +6,9 @@ import org.jetbrains.annotations.NotNull;
 import ru.mail.polis.KVDao;
 import ru.mail.polis.KVService;
 import org.apache.log4j.Logger;
-
 import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
-
-import static java.lang.Math.abs;
 
 public class PersistentKVService extends HttpServer implements KVService {
     @NotNull
