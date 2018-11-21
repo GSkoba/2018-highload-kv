@@ -9,27 +9,32 @@ import org.apache.log4j.Logger;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.stream.Collectors;
+
+import static java.lang.Math.abs;
 
 public class PersistentKVService extends HttpServer implements KVService {
     @NotNull
     private final KVDao kvDao;
-    private String[] topology;
-    private String me;
+    private HttpClient me;
     private final String DEFAULT_REPLICAS;
-    private final Map<String, HttpClient> nodes;
+    private final List<HttpClient> nodes = new ArrayList<>();
     private final Logger logger = Logger.getLogger(PersistentKVService.class);
     private final int INTERNAL_ERROR = 500;
 
     public PersistentKVService(@NotNull HttpServerConfig config, @NotNull KVDao kvDao, @NotNull Set<String> topology) throws IOException {
         super(config);
         this.kvDao = kvDao;
-        this.topology = topology.toArray(new String[0]);
-        me = "http://localhost:" + config.acceptors[0].port;
-        logger.info("ME: " + me);
-        nodes = topology.stream().collect(Collectors.toMap(
-                o -> o,
-                o -> new HttpClient(new ConnectionString(o))));
+        String port = Integer.toString(config.acceptors[0].port);
+        topology.stream().forEach(node -> {
+            HttpClient client = new HttpClient(new ConnectionString(node));
+            nodes.add(client);
+            if (me == null) {
+                if (node.split(":")[2].equals(port)) {
+                    logger.info("Server on " + node);
+                    me = client;
+                } else logger.info("Node on " + node);
+            } else logger.info("Node on " + node);
+        });
         DEFAULT_REPLICAS = (nodes.size() / 2 + 1) + "/" + nodes.size();
     }
 
@@ -46,6 +51,7 @@ public class PersistentKVService extends HttpServer implements KVService {
             session.sendError(Response.BAD_REQUEST, null);
         }
     }
+
 
     @Path("/v0/entity")
     public void entity(Request request, HttpSession session,
@@ -145,29 +151,28 @@ public class PersistentKVService extends HttpServer implements KVService {
         Response response = null;
         try {
             logger.info("GET id=" + id);
-            Value value = ValueSerializer.INSTANCE.deserialize(kvDao.get(id.getBytes()));
-            response = new Response(Response.OK, value.getData());
-            response.addHeader("Timestamp" + value.getTimestamp());
-            response.addHeader("State" + value.getState().ordinal());
+            response = new Response(Response.OK, kvDao.get(id.getBytes()));
         } catch (IOException ex) {
             logger.info(ex);
         }
         return response;
     }
 
-    private List<String> getNodes(String key, int length) {
-        List<String> clients = new ArrayList<>();
-        int firstNodeId = (key.hashCode() & Integer.MAX_VALUE) % topology.length;
-        for (int i = 0; i < length; i++) {
-            clients.add(topology[(firstNodeId + i) % topology.length]);
+    private ArrayList<HttpClient> getNodes(@NotNull String id, final int from) throws IllegalArgumentException {
+        if (id.isEmpty()) throw new IllegalArgumentException();
+        int position = abs(id.hashCode()) % from;
+        ArrayList<HttpClient> result = new ArrayList<>();
+        for (int i = 0; i < from; i++) {
+            result.add(nodes.get(position));
+            position = abs((position + 1)) % from;
         }
-        return clients;
+        return result;
     }
 
-    private Response proxiedGET(String id, int ack, List<String> from) {
-        final List<Value> values = new ArrayList<>();
-        for (String node : from) {
-            if (node.equals(me)) {
+    private Response proxiedGET(String id, int ack, List<HttpClient> from) {
+        List<Value> values = new ArrayList<>(from.size());
+        for (HttpClient node : from) {
+            if (node == me) {
                 try {
                     values.add(ValueSerializer.INSTANCE.deserialize(kvDao.get(id.getBytes())));
                 } catch (NoSuchElementException ex) {
@@ -178,18 +183,8 @@ public class PersistentKVService extends HttpServer implements KVService {
                 }
             } else {
                 try {
-                    final Response response = nodes.get(node).get("/v0/entity?id=" + id, "proxied: true");
-                    switch (response.getStatus()) {
-                        case 200:
-                            values.add(proxGetNewValue(response));
-                            logger.info("proxiedGET ok" + ":" + response.getStatus());
-                            break;
-                        case 500:
-                            logger.info("proxiedGET bad answer" + ":" + response.getStatus());
-                            break;
-                        default:
-                            logger.info("proxiedGET def" + ":" + response.getStatus());
-                    }
+                    final Response response = node.get("/v0/entity?id=" + id, "proxied: true");
+                    values.add(getValue(response));
                 } catch (Exception ex) {
                     logger.info(ex);
                 }
@@ -206,16 +201,14 @@ public class PersistentKVService extends HttpServer implements KVService {
         return new Response(Response.GATEWAY_TIMEOUT, Response.EMPTY);
     }
 
-    private Value proxGetNewValue(Response response) {
-        return new Value(response.getBody(),
-                Long.parseLong(response.getHeader("Timestamp")),
-                Integer.parseInt(response.getHeader("State")));
+    private Value getValue(Response response) {
+        return new ValueSerializer().deserialize(response.getBody());
     }
 
-    private Response proxiedPUT(String id, byte[] body, int ack, List<String> from) {
+    private Response proxiedPUT(String id, byte[] body, int ack, List<HttpClient> from) {
         int myAck = 0;
-        for (String node : from) {
-            if (node.equals(me)) {
+        for (HttpClient node : from) {
+            if (node == me) {
                 try {
                     kvDao.upsert(id.getBytes(), ValueSerializer.INSTANCE.serialize(new Value(body, System.currentTimeMillis())));
                     myAck++;
@@ -224,7 +217,7 @@ public class PersistentKVService extends HttpServer implements KVService {
                 }
             } else {
                 try {
-                    final Response response = nodes.get(node).put("/v0/entity?id=" + id, body, "proxied: true");
+                    final Response response = node.put("/v0/entity?id=" + id, body, "proxied: true");
                     if (response.getStatus() != INTERNAL_ERROR) {
                         myAck++;
                     }
@@ -240,10 +233,10 @@ public class PersistentKVService extends HttpServer implements KVService {
         }
     }
 
-    private Response proxiedDELETE(String id, int ack, List<String> from) {
+    private Response proxiedDELETE(String id, int ack, List<HttpClient> from) {
         int myAck = 0;
-        for (String node : from) {
-            if (node.equals(me)) {
+        for (HttpClient node : from) {
+            if (node == me) {
                 Value val = new Value(new byte[0], System.currentTimeMillis(), Value.State.DELETED);
                 try {
                     byte[] ser = ValueSerializer.INSTANCE.serialize(val);
@@ -254,7 +247,7 @@ public class PersistentKVService extends HttpServer implements KVService {
                 }
             } else {
                 try {
-                    final Response response = nodes.get(node).delete("/v0/entity?id=" + id, "proxied: true");
+                    final Response response = node.delete("/v0/entity?id=" + id, "proxied: true");
                     if (response.getStatus() != INTERNAL_ERROR) {
                         myAck++;
                     }
