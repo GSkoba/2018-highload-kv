@@ -1,4 +1,4 @@
-###Stage-2: 
+### Stage-2: 
 
 PUT line — https://overload.yandex.net/139795 
 
@@ -12,7 +12,7 @@ PUT+GET line — https://overload.yandex.net/139801
 
 PUT+GET line+const — https://overload.yandex.net/139819 
 
-###Stage-3: 
+### Stage-3: 
 PUT line — https://overload.yandex.net/139804 
 
 PUT line+const — https://overload.yandex.net/139821 
