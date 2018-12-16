@@ -55,7 +55,7 @@ public class PersistentKVService extends HttpServer implements KVService {
 
     @Path("/v0/entity")
     public void entity(Request request, HttpSession session,
-                       @Param("id=") String id, @Param("replicas=") String replicas) throws IOException {
+                       @Param("id=") String id, @Param("replicas=") String replicas, @Param("TTL=") long expireTime) throws IOException {
         try {
             if (id == null || id.isEmpty()) {
                 session.sendError(Response.BAD_REQUEST, null);
@@ -96,6 +96,7 @@ public class PersistentKVService extends HttpServer implements KVService {
                         session.sendResponse(proxiedPUT(
                                 id,
                                 request.getBody(),
+                                expireTime,
                                 replicasDef.getAck(),
                                 getNodes(id, replicasDef.getFrom())
                                 )
@@ -174,7 +175,13 @@ public class PersistentKVService extends HttpServer implements KVService {
         for (HttpClient node : from) {
             if (node == me) {
                 try {
-                    values.add(ValueSerializer.INSTANCE.deserialize(kvDao.get(id.getBytes())));
+                    Value value = ValueSerializer.INSTANCE.deserialize(kvDao.get(id.getBytes()));
+                    long currentTime = System.currentTimeMillis();
+                    if (currentTime > value.getTTL()){
+                        proxiedDELETE(id, ack, from);
+                    } else {
+                        values.add(value);
+                    }
                 } catch (NoSuchElementException ex) {
                     logger.info(ex);
                     values.add(new Value(new byte[0], Long.MIN_VALUE, Value.State.UNKNOWN));
@@ -205,12 +212,12 @@ public class PersistentKVService extends HttpServer implements KVService {
         return new ValueSerializer().deserialize(response.getBody());
     }
 
-    private Response proxiedPUT(String id, byte[] body, int ack, List<HttpClient> from) {
+    private Response proxiedPUT(String id, byte[] body, long expireTime, int ack, List<HttpClient> from) {
         int myAck = 0;
         for (HttpClient node : from) {
             if (node == me) {
                 try {
-                    kvDao.upsert(id.getBytes(), ValueSerializer.INSTANCE.serialize(new Value(body, System.currentTimeMillis())));
+                    kvDao.upsert(id.getBytes(), ValueSerializer.INSTANCE.serialize(new Value(body, System.currentTimeMillis(), expireTime)));
                     myAck++;
                 } catch (IOException ex) {
                     logger.info(ex);
