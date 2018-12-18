@@ -177,7 +177,7 @@ public class PersistentKVService extends HttpServer implements KVService {
                 try {
                     Value value = ValueSerializer.INSTANCE.deserialize(kvDao.get(id.getBytes()));
                     long currentTime = System.currentTimeMillis();
-                    if (currentTime > value.getTTL()){
+                    if (currentTime > value.getTTL() && value.getTTL() != null) {
                         proxiedDELETE(id, ack, from);
                     } else {
                         values.add(value);
@@ -212,12 +212,16 @@ public class PersistentKVService extends HttpServer implements KVService {
         return new ValueSerializer().deserialize(response.getBody());
     }
 
-    private Response proxiedPUT(String id, byte[] body, long expireTime, int ack, List<HttpClient> from) {
+    private Response proxiedPUT(String id, byte[] body, Long expireTime, int ack, List<HttpClient> from) {
         int myAck = 0;
         for (HttpClient node : from) {
             if (node == me) {
                 try {
-                    kvDao.upsert(id.getBytes(), ValueSerializer.INSTANCE.serialize(new Value(body, System.currentTimeMillis(), expireTime)));
+                    if (expireTime != null) {
+                        kvDao.upsert(id.getBytes(), ValueSerializer.INSTANCE.serialize(new Value(body, System.currentTimeMillis(), expireTime)));
+                    } else {
+                        kvDao.upsert(id.getBytes(), ValueSerializer.INSTANCE.serialize(new Value(body, System.currentTimeMillis())));
+                    }
                     myAck++;
                 } catch (IOException ex) {
                     logger.info(ex);
