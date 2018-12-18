@@ -55,7 +55,7 @@ public class PersistentKVService extends HttpServer implements KVService {
 
     @Path("/v0/entity")
     public void entity(Request request, HttpSession session,
-                       @Param("id=") String id, @Param("replicas=") String replicas, @Param("TTL=") long expireTime) throws IOException {
+                       @Param("id=") String id, @Param("replicas=") String replicas, @Param("TTL=") String expireTime) throws IOException {
         try {
             if (id == null || id.isEmpty()) {
                 session.sendError(Response.BAD_REQUEST, null);
@@ -68,6 +68,13 @@ public class PersistentKVService extends HttpServer implements KVService {
                 replicasDef = new Replicas(DEFAULT_REPLICAS, nodes.size());
             } else {
                 replicasDef = new Replicas(replicas, nodes.size());
+            }
+
+            Long expireTimeLong;
+            if (expireTime.isEmpty()) {
+                expireTimeLong = null;
+            } else {
+                expireTimeLong = Long.parseLong(expireTime);
             }
 
             final boolean isProxied = request.getHeader("proxied") != null;
@@ -96,7 +103,7 @@ public class PersistentKVService extends HttpServer implements KVService {
                         session.sendResponse(proxiedPUT(
                                 id,
                                 request.getBody(),
-                                expireTime,
+                                expireTimeLong,
                                 replicasDef.getAck(),
                                 getNodes(id, replicasDef.getFrom())
                                 )
@@ -122,6 +129,7 @@ public class PersistentKVService extends HttpServer implements KVService {
             session.sendResponse(new Response(Response.BAD_REQUEST, Response.EMPTY));
         } catch (Exception ex) {
             logger.info(ex);
+            ex.printStackTrace();
             session.sendResponse(new Response(Response.INTERNAL_ERROR, Response.EMPTY));
         }
     }
@@ -177,7 +185,7 @@ public class PersistentKVService extends HttpServer implements KVService {
                 try {
                     Value value = ValueSerializer.INSTANCE.deserialize(kvDao.get(id.getBytes()));
                     long currentTime = System.currentTimeMillis();
-                    if (currentTime > value.getTTL() && value.getTTL() != null) {
+                    if (value.getTTL() != null && currentTime > value.getTTL()) {
                         proxiedDELETE(id, ack, from);
                     } else {
                         values.add(value);
