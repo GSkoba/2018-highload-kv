@@ -19,21 +19,21 @@ public class Value implements Serializable {
         this.data = data;
         this.timestamp = System.currentTimeMillis();
         this.state = State.PRESENT;
-        this.TTL = null;
+        this.TTL = Long.MAX_VALUE;
     }
 
-    public Value(byte[] data, long timestamp, int state) {
+    public Value(byte[] data, long timestamp, long ttl, int state) {
         this.data = data;
         this.timestamp = timestamp;
         this.state = State.values()[state];
-        this.TTL = null;
+        this.TTL = ttl;
     }
 
-    public Value(byte[] data, long timestamp, State state) {
+    public Value(byte[] data, long timestamp, long ttl, State state) {
         this.data = data;
         this.timestamp = timestamp;
         this.state = state;
-        this.TTL = null;
+        this.TTL = ttl;
     }
 
     public Value(byte[] data, long timestamp, long expireTime) {
@@ -72,6 +72,7 @@ public class Value implements Serializable {
                 "data=" + Arrays.toString(data) +
                 ", timestamp=" + timestamp +
                 ", state=" + state +
+                ", ttl=" + TTL +
                 '}';
     }
 }

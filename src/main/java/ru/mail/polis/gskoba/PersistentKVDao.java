@@ -9,7 +9,10 @@ import ru.mail.polis.KVDao;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class PersistentKVDao implements KVDao {
     private final DB db;
@@ -48,5 +51,19 @@ public class PersistentKVDao implements KVDao {
     @Override
     public void close() throws IOException {
         db.close();
+    }
+
+    public long cleanUp(long interval, final TimeUnit timeUnit) {
+        AtomicLong atomicLong = new AtomicLong();
+        storage.entrySet().removeIf( e -> {
+            Map.Entry<byte[], byte[]> entry = (Map.Entry)e;
+            Value value = ValueSerializer.INSTANCE.deserialize(entry.getValue());
+            if (System.currentTimeMillis() - value.getTTL() >= timeUnit.toMillis(interval)) {
+                atomicLong.incrementAndGet();
+                return true;
+            }
+            return false;
+        });
+        return atomicLong.get();
     }
 }

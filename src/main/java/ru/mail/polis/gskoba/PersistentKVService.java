@@ -9,21 +9,25 @@ import org.apache.log4j.Logger;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import static java.lang.Math.abs;
 
 public class PersistentKVService extends HttpServer implements KVService {
     @NotNull
-    private final KVDao kvDao;
+    private final PersistentKVDao kvDao;
     private HttpClient me;
     private final String DEFAULT_REPLICAS;
     private final List<HttpClient> nodes = new ArrayList<>();
     private final Logger logger = Logger.getLogger(PersistentKVService.class);
     private final int INTERNAL_ERROR = 500;
+    private final ScheduledExecutorService cleanerExecutor = Executors.newSingleThreadScheduledExecutor();
 
     public PersistentKVService(@NotNull HttpServerConfig config, @NotNull KVDao kvDao, @NotNull Set<String> topology) throws IOException {
         super(config);
-        this.kvDao = kvDao;
+        this.kvDao = (PersistentKVDao) kvDao;
         String port = Integer.toString(config.acceptors[0].port);
         topology.stream().forEach(node -> {
             HttpClient client = new HttpClient(new ConnectionString(node));
@@ -36,6 +40,10 @@ public class PersistentKVService extends HttpServer implements KVService {
             } else logger.info("Node on " + node);
         });
         DEFAULT_REPLICAS = (nodes.size() / 2 + 1) + "/" + nodes.size();
+        cleanerExecutor.scheduleWithFixedDelay(() -> {
+            long collected = ((PersistentKVDao) kvDao).cleanUp(5, TimeUnit.SECONDS);
+            logger.info("Clean up result: " + collected + " records");
+        }, 5, 5, TimeUnit.SECONDS);
     }
 
     @Override
@@ -71,8 +79,8 @@ public class PersistentKVService extends HttpServer implements KVService {
             }
 
             Long expireTimeLong;
-            if (expireTime.isEmpty()) {
-                expireTimeLong = null;
+            if (expireTime == null || expireTime.isEmpty()) {
+                expireTimeLong = Long.MAX_VALUE;
             } else {
                 expireTimeLong = Long.parseLong(expireTime);
             }
@@ -136,7 +144,7 @@ public class PersistentKVService extends HttpServer implements KVService {
 
     private Response delete(String id) {
         try {
-            Value val = new Value(new byte[0], System.currentTimeMillis(), Value.State.DELETED);
+            Value val = new Value(new byte[0], System.currentTimeMillis(), Long.MAX_VALUE, Value.State.DELETED);
             kvDao.upsert(id.getBytes(), ValueSerializer.INSTANCE.serialize(val));
             logger.info("DELETE id=" + id);
         } catch (IOException ex) {
@@ -148,7 +156,7 @@ public class PersistentKVService extends HttpServer implements KVService {
 
     private Response put(String id, byte[] body) {
         try {
-            kvDao.upsert(id.getBytes(), ValueSerializer.INSTANCE.serialize(new Value(body)));
+            kvDao.upsert(id.getBytes(), body);
             logger.info("PUT id=" + id);
         } catch (IOException ex) {
             logger.info(ex);
@@ -185,14 +193,14 @@ public class PersistentKVService extends HttpServer implements KVService {
                 try {
                     Value value = ValueSerializer.INSTANCE.deserialize(kvDao.get(id.getBytes()));
                     long currentTime = System.currentTimeMillis();
-                    if (value.getTTL() != null && currentTime > value.getTTL()) {
+                    if (currentTime > value.getTTL()) {
                         proxiedDELETE(id, ack, from);
                     } else {
                         values.add(value);
                     }
                 } catch (NoSuchElementException ex) {
                     logger.info(ex);
-                    values.add(new Value(new byte[0], Long.MIN_VALUE, Value.State.UNKNOWN));
+                    values.add(new Value(new byte[0], Long.MIN_VALUE, Long.MAX_VALUE, Value.State.UNKNOWN));
                 } catch (IOException ex) {
                     logger.info(ex);
                 }
@@ -222,21 +230,18 @@ public class PersistentKVService extends HttpServer implements KVService {
 
     private Response proxiedPUT(String id, byte[] body, Long expireTime, int ack, List<HttpClient> from) {
         int myAck = 0;
+        byte[] value = ValueSerializer.INSTANCE.serialize(new Value(body, System.currentTimeMillis(), expireTime));
         for (HttpClient node : from) {
             if (node == me) {
                 try {
-                    if (expireTime != null) {
-                        kvDao.upsert(id.getBytes(), ValueSerializer.INSTANCE.serialize(new Value(body, System.currentTimeMillis(), expireTime)));
-                    } else {
-                        kvDao.upsert(id.getBytes(), ValueSerializer.INSTANCE.serialize(new Value(body, System.currentTimeMillis())));
-                    }
+                    kvDao.upsert(id.getBytes(), value);
                     myAck++;
                 } catch (IOException ex) {
                     logger.info(ex);
                 }
             } else {
                 try {
-                    final Response response = node.put("/v0/entity?id=" + id, body, "proxied: true");
+                    final Response response = node.put("/v0/entity?id=" + id, value, "proxied: true");
                     if (response.getStatus() != INTERNAL_ERROR) {
                         myAck++;
                     }
@@ -256,7 +261,7 @@ public class PersistentKVService extends HttpServer implements KVService {
         int myAck = 0;
         for (HttpClient node : from) {
             if (node == me) {
-                Value val = new Value(new byte[0], System.currentTimeMillis(), Value.State.DELETED);
+                Value val = new Value(new byte[0], System.currentTimeMillis(), Long.MAX_VALUE, Value.State.DELETED);
                 try {
                     byte[] ser = ValueSerializer.INSTANCE.serialize(val);
                     kvDao.upsert(id.getBytes(), ser);

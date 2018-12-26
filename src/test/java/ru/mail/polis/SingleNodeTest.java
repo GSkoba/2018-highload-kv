@@ -95,6 +95,13 @@ class SingleNodeTest extends TestBase {
         return client.put(path(key), data);
     }
 
+    private Response upsertWithTTL(
+            @NotNull final String key,
+            @NotNull final byte[] data,
+            final Long ttl) throws Exception {
+        return client.put(path(key + "&TTL=" + ttl), data);
+    }
+
     @Test
     void emptyKey() {
         assertTimeoutPreemptively(TIMEOUT, () -> {
@@ -287,5 +294,28 @@ class SingleNodeTest extends TestBase {
             // Check
             assertEquals(404, get(key).getStatus());
         });
+    }
+
+    @Test
+    void expire() throws Exception{
+        final String key = randomId();
+        final byte[] value1 = randomValue();
+        final byte[] value2 = randomValue();
+
+        // Insert value1
+        assertTimeoutPreemptively(TIMEOUT,
+                () -> assertEquals(
+                        201,
+                        upsertWithTTL(key, value1, System.currentTimeMillis() + 100).getStatus()));
+
+        //check
+        final Response response = get(key);
+        assertTimeoutPreemptively(TIMEOUT, () -> assertEquals(200, response.getStatus()));
+
+        Thread.sleep(15000);
+
+        // Check expiration
+        final Response expiredResponse = get(key);
+        assertTimeoutPreemptively(TIMEOUT, () -> assertEquals(404, expiredResponse.getStatus()));
     }
 }
